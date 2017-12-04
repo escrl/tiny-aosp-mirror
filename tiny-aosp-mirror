@@ -1,0 +1,44 @@
+#!/usr/bin/python2
+
+from __future__ import print_function
+import os
+import subprocess
+import sys
+
+if __name__ == '__main__':
+    mirror_repodir = os.path.join(os.getcwd(), '.repo')
+    if not os.path.exists(mirror_repodir):
+        ret = subprocess.call(['repo', 'init', '-u', 'https://android.googlesource.com/mirror/manifest', '--mirror'])
+        if ret != 0:
+            print("init mirror failed")
+            sys.exit(ret)
+    mirror_local_manifests = os.path.join(mirror_repodir, 'local_manifests')
+
+    sys.path[0:0] = [os.path.join(mirror_repodir, 'repo')]
+    from manifest_xml import XmlManifest
+
+    if not os.path.exists(mirror_local_manifests):
+        os.mkdir(mirror_local_manifests)
+    remove_file_path = os.path.join(mirror_local_manifests, '00_remove_projects.xml')
+    if os.path.exists(remove_file_path):
+        os.remove(remove_file_path)
+
+    mirror = XmlManifest(mirror_repodir)
+    remove_projects = set([p.name for p in filter(lambda p: p.remote.name == 'aosp', mirror.projects)])
+    remove_projects -= set(['platform/manifest'])
+    aosp_projects = len(remove_projects)
+    print('aosp projects: {}'.format(aosp_projects))
+
+    repos = [XmlManifest(os.path.join(p, '.repo')) for p in sys.argv[1:]]
+    for repo in repos:
+        remove_projects -= set([p.name for p in filter(lambda p: p.remote.name == 'aosp', repo.projects)])
+
+    print('removed projects: {}'.format(len(remove_projects)))
+    print('mirrored projects: {}'.format(aosp_projects-len(remove_projects)))
+
+    f = open(remove_file_path, 'w')
+    f.write('<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n')
+    for p in sorted(remove_projects):
+        f.write('  <remove-project name="{}" />\n'.format(p))
+    f.write('</manifest>\n')
+    f.close()
